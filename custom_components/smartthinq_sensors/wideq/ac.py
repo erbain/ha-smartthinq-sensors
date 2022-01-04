@@ -16,6 +16,7 @@ from . import (
     FEAT_HOT_WATER_TEMP,
     FEAT_IN_WATER_TEMP,
     FEAT_OUT_WATER_TEMP,
+    FEAT_SILENT_MODE,
 )
 
 from .core_exceptions import InvalidRequestError
@@ -53,6 +54,7 @@ AC_STATE_WDIR_VSWING = ["WDirUpDown", "airState.wDir.upDown"]
 AC_STATE_POWER = [AC_STATE_POWER_V1, "airState.energy.onCurrent"]
 AC_STATE_HUMIDITY = ["SensorHumidity", "airState.humidity.current"]
 AC_STATE_DUCT_ZONE = ["DuctZoneType", "airState.ductZone.state"]
+AC_STATE_SILENT_MODE = ["SilentMode", "airState.miscFuncState.silentAWHP"]
 
 CMD_STATE_OPERATION = [AC_CTRL_BASIC, "Set", AC_STATE_OPERATION]
 CMD_STATE_OP_MODE = [AC_CTRL_BASIC, "Set", AC_STATE_OPERATION_MODE]
@@ -65,6 +67,7 @@ CMD_STATE_WDIR_VSWING = [AC_CTRL_WIND_DIRECTION, "Set", AC_STATE_WDIR_VSWING]
 CMD_STATE_DUCT_ZONES = [
     AC_CTRL_MISC, "Set", [AC_DUCT_ZONE_V1, "airState.ductZone.control"]
 ]
+CMD_STATE_SILENT_MODE = [AC_CTRL_BASIC, "Set", AC_STATE_SILENT_MODE]
 
 CMD_ENABLE_EVENT_V2 = ["allEventEnable", "Set", "airState.mon.timeout"]
 
@@ -183,6 +186,10 @@ class ACSwingMode(enum.Enum):
     SwingOff = "@OFF"
     SwingOn = "@ON"
 
+class AWHPSilentMode(enum.Enum):
+    """Silent mode for an AHWP device."""
+    SilentModeOff = "@OFF"
+    SilentModeOn = "@ON"
 
 class AirConditionerDevice(Device):
     """A higher-level interface for a AC."""
@@ -193,6 +200,7 @@ class AirConditionerDevice(Device):
             UNIT_TEMP_FAHRENHEIT if temp_unit == UNIT_TEMP_FAHRENHEIT else UNIT_TEMP_CELSIUS
         )
         self._is_air_to_water = None
+        self._silent_mode = None
         self._supported_operation = None
         self._supported_op_modes = None
         self._supported_fan_speeds = None
@@ -693,6 +701,23 @@ class AirConditionerDevice(Device):
 
         return self._status
 
+    @property
+    def silent_modes(self): 
+        if self._silent_mode is None:
+            self._silent_mode = []
+            self._silent_mode = [e.name for e in AWHPSilentMode]
+        return self._silent_mode
+
+    def set_silent_mode(self, value=False):
+        """Set the silent mode to a value from the `AWHPSilentMode` enum."""
+        if value == True:
+            mode = "SilentModeOn"
+        else:
+            mode = "SilentModeOff"
+        keys = self._get_cmd_keys(CMD_STATE_SILENT_MODE)
+        silent_mode = self.model_info.enum_value(keys[2], AWHPSilentMode[mode].value)
+        self.set(keys[0], keys[1], key=keys[2], value=silent_mode)
+
 
 class AirConditionerStatus(DeviceStatus):
     """Higher-level information about a AC's current status."""
@@ -876,6 +901,31 @@ class AirConditionerStatus(DeviceStatus):
         key = self._get_state_key(AC_STATE_DUCT_ZONE)
         return self.to_int_or_none(self._data.get(key))
 
+    @property
+    def silent_mode(self):
+        if not self.is_info_v2:
+            return None
+        key = self._get_state_key(AC_STATE_SILENT_MODE)
+        value = self._data.get(key)
+        return self._update_feature(
+            FEAT_SILENT_MODE, value, False
+        )
+
+    @property
+    def is_silent_mode_on(self):
+        key = self._get_state_key(AC_STATE_SILENT_MODE)
+        value = int(self._data.get(key))
+        try:
+            if value == 1.0:
+                return True
+            elif value == 0.0:
+                return False
+            else:
+                return None
+        except ValueError:
+            return None
+
+
     def _update_features(self):
         result = [
             self.hot_water_current_temp,
@@ -883,4 +933,5 @@ class AirConditionerStatus(DeviceStatus):
             self.out_water_current_temp,
             self.energy_current,
             self.humidity,
+            self.silent_mode,
         ]

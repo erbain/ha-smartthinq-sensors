@@ -20,6 +20,7 @@ FEAT_HUMIDITY = "humidity"
 FEAT_HOT_WATER_TEMP = "hot_water_temperature"
 FEAT_IN_WATER_TEMP = "in_water_temperature"
 FEAT_OUT_WATER_TEMP = "out_water_temperature"
+FEAT_SILENT_MODE = "silent_mode"
 
 # wash devices features
 FEAT_DRYLEVEL = "dry_level"

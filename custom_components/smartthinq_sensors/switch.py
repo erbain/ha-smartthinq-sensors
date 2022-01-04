@@ -14,6 +14,7 @@ from .wideq import (
     FEAT_EXPRESSFRIDGE,
     FEAT_EXPRESSMODE,
     FEAT_ICEPLUS,
+    FEAT_SILENT_MODE,
 )
 
 from homeassistant.components.switch import (
@@ -104,6 +105,17 @@ AC_DUCT_SWITCH = ThinQSwitchEntityDescription(
     name="Zone",
 )
 
+AWHP_SWITCH: Tuple[ThinQSwitchEntityDescription, ...] = (
+    ThinQSwitchEntityDescription(
+        key=FEAT_SILENT_MODE,
+        name="Silent mode",
+        value_fn=lambda x: x.base_device_silent_mode,
+        turn_on_fn=lambda x: x.device.set_silent_mode(True),
+        turn_off_fn=lambda x: x.device.set_silent_mode(False),
+        available_fn=lambda x: x.is_power_on,
+    ),
+)
+
 
 def _switch_exist(lge_device: LGEDevice, switch_desc: ThinQSwitchEntityDescription):
     """Check if a switch exist for device."""
@@ -169,6 +181,15 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             LGEDuctSwitch(lge_device, duct_zone)
             for lge_device in lge_devices.get(DeviceType.AC, [])
             for duct_zone in lge_device.device.duct_zones
+        ]
+    )
+    #AWHP switch
+    lge_switch.extend(
+        [
+            LGESwitch(lge_device, switch_desc)
+            for switch_desc in AWHP_SWITCH
+            for lge_device in lge_devices.get(DeviceType.AC, [])
+            if _switch_exist(lge_device, switch_desc)
         ]
     )
 
