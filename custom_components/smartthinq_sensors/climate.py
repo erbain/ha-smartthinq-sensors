@@ -7,8 +7,8 @@ import logging
 from typing import Any, Callable, List, Tuple
 
 
-from .wideq import FEAT_HUMIDITY, FEAT_OUT_WATER_TEMP
-from .wideq.ac import AirConditionerDevice, ACMode
+from .wideq import FEAT_HUMIDITY, FEAT_OUT_WATER_TEMP, FEAT_HOT_WATER_CURRENT_TEMP
+from .wideq.ac import AirConditionerDevice, ACMode, HotWaterOpMode
 from .wideq.device import UNIT_TEMP_FAHRENHEIT, DeviceType
 
 from homeassistant.components.climate import ClimateEntity, ClimateEntityDescription
@@ -42,6 +42,8 @@ from .device_helpers import (
 # general ac attributes
 ATTR_FRIDGE = "fridge"
 ATTR_FREEZER = "freezer"
+ATTR_DHW = "DHW"
+ATTR_AC = "AC"
 
 HVAC_MODE_LOOKUP = {
     ACMode.ENERGY_SAVER.name: HVAC_MODE_AUTO,
@@ -51,6 +53,11 @@ HVAC_MODE_LOOKUP = {
     ACMode.COOL.name: HVAC_MODE_COOL,
     ACMode.FAN.name: HVAC_MODE_FAN_ONLY,
     ACMode.ACO.name: HVAC_MODE_HEAT_COOL,
+}
+
+HOT_WATER_MODE_LOOKUP = {
+    HotWaterOpMode.HotWaterOn.name: HVAC_MODE_HEAT,
+    HotWaterOpMode.HotWaterOff.name: HVAC_MODE_OFF,
 }
 
 ATTR_SWING_HORIZONTAL = "swing_mode_horizontal"
@@ -96,6 +103,26 @@ REFRIGERATOR_CLIMATE: Tuple[ThinQRefClimateEntityDescription, ...] = (
     ),
 )
 
+AC_CLIMATE: Tuple[ThinQRefClimateEntityDescription, ...] = (
+    ThinQRefClimateEntityDescription(
+        key=ATTR_DHW,
+        name="AWHP DHW",
+        icon="mdi:water-boiler",
+        temp_fn=lambda x: x.hot_water_current_temp,
+        #range_temp_fn=lambda x: x.device.fridge_target_temp_range,
+        range_temp_fn=lambda x: x.device._get_hot_water_temperature_range,
+        set_temp_fn=lambda x, y: x.device.set_hot_water_target_temp(y),
+    ),
+    ThinQRefClimateEntityDescription(
+        key=ATTR_AC,
+        name="AC",
+        #icon="mdi:cooling",
+        temp_fn=lambda x: x.curr_temp,
+        #range_temp_fn=lambda x: x.device.fridge_target_temp_range,
+        range_temp_fn=lambda x: x.device._get_temperature_range,
+        set_temp_fn=lambda x, y: x.device.set_target_temp(y),
+    ),
+)
 
 def remove_prefix(text: str, prefix: str) -> str:
     """Remove a prefix from a string."""
@@ -121,6 +148,12 @@ async def async_setup_entry(
             LGEACClimate(lge_device)
             for lge_device in lge_devices.get(DeviceType.AC, [])
         ]
+    )
+    lge_climates.extend(
+        [
+            LGEACDWHClimate(lge_device)
+            for lge_device in lge_devices.get(DeviceType.AC, [])
+        ], 
     )
 
     # Refrigerator devices
@@ -377,6 +410,93 @@ class LGEACClimate(LGEClimate):
 
         return self._device.conv_temp_unit(DEFAULT_MAX_TEMP)
 
+class LGEACDWHClimate(LGEClimate):
+    """AWHP climate for hot water heating ."""
+
+    def __init__(self, api: LGEDevice) -> None:
+        """Initialize the hot water heating climate."""
+        super().__init__(api)
+        self._device: AirConditionerDevice = api.device
+        self._attr_name = f"{api.name}-DHW"
+        self._attr_unique_id = f"{api.unique_id}-AC-DHW"
+        self._hot_water_mode_lookup = None
+
+    def _available_hvac_modes(self):
+        """Return available hvac modes from lookup dict."""
+        if self._hot_water_mode_lookup is None:
+            modes = {}
+            for key, mode in HOT_WATER_MODE_LOOKUP.items():
+                if key in self._device.op_modes_hot_water:
+                    # invert key and mode to avoid duplicated HVAC modes
+                    modes[mode] = key
+            self._hot_water_mode_lookup = {v: k for k, v in modes.items()}
+        return self._hot_water_mode_lookup
+
+    @property
+    def target_temperature_step(self) -> float:
+        """Return the supported step of target hot water temperature."""
+        return self._device.target_temperature_step_hot_water
+
+    @property
+    def temperature_unit(self) -> str:
+        """Return the unit of measurement used by the platform."""
+        if self._device.temperature_unit == UNIT_TEMP_FAHRENHEIT:
+            return TEMP_FAHRENHEIT
+        return TEMP_CELSIUS
+
+    @property
+    def hvac_mode(self) -> str:
+        """Return hvac operation ie. heat water and off."""
+        op_mode = self._api.state.operation_mode_hot_water
+        modes = self._available_hvac_modes()
+        ret_val = modes.get(op_mode, HVAC_MODE_HEAT)
+        return ret_val
+
+    def set_hvac_mode(self, hot_water_mode: str) -> None:
+        hot_water_modes = self._available_hvac_modes()
+        reverse_lookup = {v: k for k, v in hot_water_modes.items()}
+        hot_water_operation_mode = reverse_lookup.get(hot_water_mode)
+        if hot_water_operation_mode is None:
+            raise ValueError(f"Invalid hot water mode [{hot_water_mode}]")
+        self._device.set_hot_water_op_mode(hot_water_operation_mode)
+
+    @property
+    def hvac_modes(self):
+        """Return the list of available hvac operation modes for hot water."""
+        modes = self._available_hvac_modes()
+        return list(modes.values())
+
+    @property
+    def current_temperature(self) -> float:
+        """Return the current hot water temperature."""
+        return self._api.state.hot_water_current_temp
+
+    @property
+    def target_temperature(self) -> float:
+        """Return the temperature of hot water we try to reach."""
+        return self._api.state.hot_water_target_temp
+
+    def set_temperature(self, **kwargs) -> None:
+        """Set new hot water target temperature."""
+        self._device.set_hot_water_target_temp(
+            kwargs.get("temperature", self.target_temperature)
+        )
+
+    @property
+    def supported_features(self) -> int:
+        """Return the list of supported features."""
+        features = SUPPORT_TARGET_TEMPERATURE
+        return features
+
+    @property
+    def min_temp(self) -> float:
+        """Return the minimum hot water temperature."""
+        return self._api.state.hot_water_target_temperature_min
+
+    @property
+    def max_temp(self) -> float:
+        """Return the maximum hot water temperature."""
+        return self._api.state.hot_water_target_temperature_max
 
 class LGERefrigeratorClimate(LGEClimate):
     """Refrigerator climate device."""

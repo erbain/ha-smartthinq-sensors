@@ -1113,7 +1113,7 @@ class ModelInfoV2AC(ModelInfo):
         #    return ReferenceValue(self._data[ref])
         # elif d["type"] == "Boolean":
         #    return EnumValue({"0": "False", "1": "True"})
-        elif d["data_type"] == "String":
+        elif d["data_type"] in ("String", "string"):
             pass
         else:
             assert False, "unsupported value type {}".format(d["data_type"])

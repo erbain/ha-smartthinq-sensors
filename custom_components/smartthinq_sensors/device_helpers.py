@@ -116,6 +116,14 @@ class LGEBaseDevice:
             ret_val[feat_name] = states.get(feat_key)
         return ret_val
 
+    @property
+    def base_device_silent_mode(self):
+        state = self._api.state.is_silent_mode_on
+        if self._api.state:
+            if state:
+                return True
+            else:
+                return False
 
 class LGEWashDevice(LGEBaseDevice):
     """A wrapper to monitor LGE Wash devices"""

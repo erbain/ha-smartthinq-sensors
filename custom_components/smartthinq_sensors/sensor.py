@@ -12,7 +12,7 @@ from .wideq import (
     FEAT_ENERGY_CURRENT,
     FEAT_ERROR_MSG,
     FEAT_HALFLOAD,
-    FEAT_HOT_WATER_TEMP,
+    FEAT_HOT_WATER_CURRENT_TEMP,
     FEAT_HUMIDITY,
     FEAT_IN_WATER_TEMP,
     FEAT_LOWER_FILTER_LIFE,
@@ -237,7 +237,7 @@ AC_SENSORS: Tuple[ThinQSensorEntityDescription, ...] = (
         entity_registry_enabled_default=False,
     ),
     ThinQSensorEntityDescription(
-        key=FEAT_HOT_WATER_TEMP,
+        key=FEAT_HOT_WATER_CURRENT_TEMP,
         name="Hot water temperature",
         state_class=STATE_CLASS_MEASUREMENT,
         device_class=DEVICE_CLASS_TEMPERATURE,
